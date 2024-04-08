@@ -61,20 +61,17 @@ impl<'a> Iterator for Lexer<'a> {
     }
 }
 
-fn _index_document(_content: &str) -> HashMap<String, usize> {
-    todo!();
-}
 fn parse_entire_pdf_file(file_path: &Path) -> Result<String, ()> {
-    let pdf = PopplerDocument::new_from_file(&file_path, Some("")).map_err(|err| {
-        eprintln!(
-            "ERROR: could not read file {file_path}: {err}",
-            file_path = file_path.display()
-        );
-    })?;
+    let pdf = match PopplerDocument::new_from_file(&file_path, Some("")) {
+        Ok(file) => file,
+        Err(err) => {
+            eprintln!("ERROR: could not read file {file_path:?}: {err}");
+            exit(1)
+        }
+    };
 
     let mut buffer = String::new();
-    let n = pdf.get_n_pages();
-    for i in 0..n {
+    for i in 0..pdf.get_n_pages() {
         let page = pdf
             .get_page(i)
             .expect("{i} is within the bounds of the range of the page");
@@ -91,24 +88,26 @@ fn parse_entire_pdf_file(file_path: &Path) -> Result<String, ()> {
 type TermFreq = HashMap<String, usize>;
 type TermFreqIndex = HashMap<PathBuf, TermFreq>;
 
+// fn main() -> std::io::Result<()> {
+//     let index_path = "index.json";
+//     let index_file = File::open(index_path)?;
+//     println!("Reading {index_path} index file..");
+//     let tf_index: TermFreqIndex = serde_json::from_reader(index_file)?;
+//     println!(
+//         "{index_path} contains {count} files",
+//         count = tf_index.len()
+//     );
+//
+//     Ok(())
+// }
+
 fn main() -> std::io::Result<()> {
-    let index_path = "index.json";
-    let index_file = File::open(index_path)?;
-    println!("Reading {index_path} index file..");
-    let tf_index: TermFreqIndex = serde_json::from_reader(index_file)?;
-    println!(
-        "{index_path} contains {count} files",
-        count = tf_index.len()
-    );
-
-    Ok(())
-}
-
-fn main2() -> std::io::Result<()> {
     let dir_path = "pdf";
-    let _top_n = 20;
     let mut tf_index = TermFreqIndex::new();
 
+    // TODO: Add recursive directory search
+    // if entry_path.is_dir() --> for sub_entry in entry_path
+    // else ( normal mode )
     for entry in fs::read_dir(&dir_path)? {
         let entry_path = entry?.path();
         let content = match parse_entire_pdf_file(&entry_path) {
@@ -151,10 +150,14 @@ fn main2() -> std::io::Result<()> {
             exit(1)
         }
     };
-    serde_json::to_writer(index_file, &tf_index).unwrap_or_else(|err| {
-        eprintln!("ERROR: serde: {err}");
-        exit(1)
-    });
+
+    match serde_json::to_writer(index_file, &tf_index) {
+        Ok(file) => file,
+        Err(err) => {
+            eprintln!("ERROR: serde error: could not write to {index_path}: {err}");
+            exit(1)
+        }
+    };
 
     Ok(())
 }
