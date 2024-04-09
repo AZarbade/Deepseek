@@ -1,10 +1,10 @@
 use poppler::PopplerDocument;
 use std::collections::HashMap;
+use std::env;
 use std::fs::{self, File};
 use std::process::exit;
 use std::{path::Path, path::PathBuf};
 
-#[derive(Debug)]
 struct Lexer<'a> {
     content: &'a [char],
 }
@@ -82,45 +82,90 @@ fn parse_entire_pdf_file(file_path: &Path) -> Result<String, ()> {
         }
     }
 
-    Ok(buffer)
+    Some(buffer)
 }
 
 type TermFreq = HashMap<String, usize>;
 type TermFreqIndex = HashMap<PathBuf, TermFreq>;
 
-// fn main() -> std::io::Result<()> {
-//     let index_path = "index.json";
-//     let index_file = File::open(index_path)?;
-//     println!("Reading {index_path} index file..");
-//     let tf_index: TermFreqIndex = serde_json::from_reader(index_file)?;
-//     println!(
-//         "{index_path} contains {count} files",
-//         count = tf_index.len()
-//     );
-//
-//     Ok(())
-// }
+fn check_index(index_path: &str) -> std::io::Result<()> {
+    let index_file = match File::open(index_path) {
+        Ok(index_file) => index_file,
+        Err(err) => {
+            eprintln!("ERROR: could not open index file {index_path}: {err}");
+            exit(1)
+        }
+    };
+    println!("Reading {index_path} index file...");
+    let tf_index: TermFreqIndex = match serde_json::from_reader(index_file) {
+        Ok(tf_index) => tf_index,
+        Err(err) => {
+            eprintln!("ERROR: could not parse index file {index_path}: {err}");
+            exit(1)
+        }
+    };
 
-fn main() -> std::io::Result<()> {
-    let dir_path = "pdf";
+    println!(
+        "{index_path} contains {count} files",
+        count = tf_index.len()
+    );
+
+    Ok(())
+}
+
+fn save_tf_index(tf_index: TermFreqIndex, index_path: &str) -> std::io::Result<(), ()> {
+    println!("Saving {index_path}...");
+
+    let index_file = match File::create(index_path) {
+        Ok(file) => file,
+        Err(err) => {
+            eprintln!("ERROR: could not create the {index_path}: {err}");
+            exit(1)
+        }
+    };
+
+    match serde_json::to_writer(index_file, &tf_index) {
+        Ok(file) => file,
+        Err(err) => {
+            eprintln!("ERROR: serde error: could not write to {index_path}: {err}");
+            exit(1);
+        }
+    };
+
+    Ok(())
+}
+
+fn tf_index_folder(dir_path: &str) -> Result<TermFreqIndex, ()> {
+    let dir = match fs::read_dir(dir_path) {
+        Ok(dir) => dir,
+        Err(err) => {
+            eprintln!("ERROR: could not open directory {dir_path}: {err}");
+            exit(1);
+        }
+    };
+
     let mut tf_index = TermFreqIndex::new();
 
-    // TODO: Add recursive directory search
-    // if entry_path.is_dir() --> for sub_entry in entry_path
-    // else ( normal mode )
-    for entry in fs::read_dir(&dir_path)? {
-        let entry_path = entry?.path();
-        let content = match parse_entire_pdf_file(&entry_path) {
-            Ok(string) => string.chars().collect::<Vec<_>>(),
+    'next_file: for file in dir {
+        let file_path = match file.path() {
+            Ok(file_path) => file_path,
             Err(err) => {
-                eprintln!("Error parsing PDF file: {err:?}");
-                exit(1)
+                eprintln!("ERROR: could not read next file in directory {dir_path}: {err}");
+                exit(1);
             }
         };
-        println!("Indexing {entry_path:?}");
+
+        println!("Indexing {file_path:?}...");
+
+        let content = match parse_entire_pdf_file(&file_path) {
+            Ok(content) => content.chars().collect::<Vec<_>>(),
+            Err(()) => {
+                println!("WARN: could not index {file_path:?}");
+                continue 'next_file;
+            }
+        };
 
         let mut tf = TermFreq::new();
-
         for token in Lexer::new(&content) {
             let term = token
                 .iter()
@@ -138,26 +183,51 @@ fn main() -> std::io::Result<()> {
         stats.sort_by_key(|(_, f)| *f);
         stats.reverse();
 
-        tf_index.insert(entry_path, tf);
+        tf_index.insert(file_path, tf);
     }
 
-    let index_path = "index.json";
-    println!("Saving index...");
-    let index_file = match File::create(index_path) {
-        Ok(file) => file,
-        Err(err) => {
-            eprintln!("ERROR: could not create the {index_path}: {err}");
-            exit(1)
-        }
-    };
+    Ok(tf_index)
+}
 
-    match serde_json::to_writer(index_file, &tf_index) {
-        Ok(file) => file,
-        Err(err) => {
-            eprintln!("ERROR: serde error: could not write to {index_path}: {err}");
-            exit(1)
+fn main() {
+    let mut args = env::args();
+    let _program = args.next().expect("path to program is provided");
+    // TODO: handle error
+    let subcommand = args.next().unwrap_or_else(|| {
+        println!("ERROR: no subcommand is provided!");
+        exit(1);
+    });
+
+    match subcommand.as_str() {
+        "index" => {
+            // TODO: handle error
+            let dir_path = args.next().unwrap_or_else(|| {
+                println!("ERROR: no directory is provided for {subcommand} subcommand");
+                exit(1);
+            });
+
+            // TODO: handle error
+            let tf_index = tf_index_folder(&dir_path);
+            save_tf_index(&tf_index, "index.json")?;
         }
-    };
+        "search" => {
+            // TODO: handle error
+            let index_path = args.next().unwrap_or_else(|| {
+                println!("ERROR: no path to index is provided for {subcommand} subcommand");
+                exit(1);
+            });
+
+            // TODO: handle error
+            check_index(&index_path).unwrap_or_else(|err| {
+                println!("ERROR: could not check index file {index_path}: {err}");
+                exit(1);
+            });
+        }
+        _ => {
+            println!("ERROR: unknown subcommand {subcommand}");
+            return Err(());
+        }
+    }
 
     Ok(())
 }
