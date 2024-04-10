@@ -154,10 +154,6 @@ fn tf_index_folder(dir_path: &str) -> Result<TermFreqIndex, ()> {
             }
         }
 
-        let mut stats = tf.iter().collect::<Vec<_>>();
-        stats.sort_by_key(|(_, f)| *f);
-        stats.reverse();
-
         tf_index.insert(file_path, tf);
     }
 
