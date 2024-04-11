@@ -5,6 +5,8 @@ use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::result::Result;
+use std::str;
+use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
 struct Lexer<'a> {
     content: &'a [char],
@@ -118,19 +120,35 @@ fn save_tf_index(tf_index: TermFreqIndex, index_path: &str) -> Result<(), ()> {
     Ok(())
 }
 
-fn tf_index_folder(dir_path: &str) -> Result<TermFreqIndex, ()> {
+fn tf_index_folder(dir_path: &Path, tf_index: &mut TermFreqIndex) -> Result<(), ()> {
     let dir = fs::read_dir(dir_path).map_err(|err| {
-        eprintln!("ERROR: could not open directory {dir_path}: {err}");
+        eprintln!(
+            "ERROR: could not open directory {dir_path}: {err}",
+            dir_path = dir_path.display()
+        );
     })?;
 
-    let mut tf_index = TermFreqIndex::new();
-
     'next_file: for file in dir {
-        let file_path = file
-            .map_err(|err| {
-                eprintln!("ERROR: could not read next file in directory {dir_path}: {err}");
-            })?
-            .path();
+        let file = file.map_err(|err| {
+            eprintln!(
+                "ERROR: could not read next file in directory {dir_path} during indexing: {err}",
+                dir_path = dir_path.display()
+            );
+        })?;
+
+        let file_path = file.path();
+
+        let file_type = file.file_type().map_err(|err| {
+            eprintln!(
+                "ERROR: could not determine type of file {file_path}: {err}",
+                file_path = file_path.display()
+            );
+        })?;
+
+        if file_type.is_dir() {
+            tf_index_folder(&file_path, tf_index)?;
+            continue 'next_file;
+        }
 
         println!("Indexing {:?}...", &file_path);
 
@@ -157,16 +175,75 @@ fn tf_index_folder(dir_path: &str) -> Result<TermFreqIndex, ()> {
         tf_index.insert(file_path, tf);
     }
 
-    Ok(tf_index)
+    Ok(())
 }
 
 fn usage(program: &str) {
     eprintln!("Usage: {program} [SUBCOMMAND] [OPTIONS]");
     eprintln!("Subcommands:");
-    eprintln!(
-        "             - index <folder>: index the <folder> and save the index to index.json file"
+    eprintln!("- index <folder>: index the <folder> and save the index to index.json file");
+    eprintln!("- search <index-file> [index.json]: check how many documents are indexed in the file (searching is not implemented yet)");
+    eprintln!("- serve <port> [9090]: start local http server with web interface");
+}
+
+fn serve_static_file(request: Request, file_path: &str, content_type: &str) -> Result<(), ()> {
+    let content_type_header = Header::from_bytes("Content-Type", content_type).expect("some some");
+
+    let file = File::open(file_path).map_err(|err| {
+        eprintln!("ERROR: could not sever file: {file_path}: {err}");
+    })?;
+
+    let rq = Response::from_file(file).with_header(content_type_header);
+    request.respond(rq).map_err(|err| {
+        eprintln!("ERROR: could not serve static file {file_path}: {err}");
+    })
+}
+
+fn server_404(request: Request) -> Result<(), ()> {
+    request
+        .respond(Response::from_string("404").with_status_code(StatusCode(404)))
+        .map_err(|err| {
+            eprintln!("ERROR: could not serve a request: {err}");
+        })
+}
+
+fn server_request(mut request: Request) -> Result<(), ()> {
+    println!(
+        "INFO: received request! method: {:?}, url: {:?}",
+        request.method(),
+        request.url()
     );
-    eprintln!("             - search <index-file>: check how many documents are indexed in the file (searching is not implemented yet)");
+
+    match (request.method(), request.url()) {
+        (Method::Post, "/api/search") => {
+            let mut buf = Vec::new();
+            let _ = request.as_reader().read_to_end(&mut buf);
+            let body = str::from_utf8(&buf)
+                .map_err(|err| {
+                    eprintln!("ERROR: could not interpret body: {err}");
+                })?
+                .chars()
+                .collect::<Vec<_>>();
+
+            for token in Lexer::new(&body) {
+                println!("{token:?}");
+            }
+
+            request.respond(Response::from_string("ok")).map_err(|err| {
+                eprintln!("ERROR: {err}");
+            })
+        }
+
+        (Method::Get, "/index.js") => {
+            serve_static_file(request, "index.js", "text/javascript; charset=utf-8")
+        }
+
+        (Method::Get, "/") | (Method::Get, "/index.html") => {
+            serve_static_file(request, "index.html", "text/html; charset=utf-8")
+        }
+
+        _ => server_404(request),
+    }
 }
 
 fn entry() -> Result<(), ()> {
@@ -185,7 +262,8 @@ fn entry() -> Result<(), ()> {
                 eprintln!("ERROR: no directory is provided for {subcommand} subcommand");
             })?;
 
-            let tf_index = tf_index_folder(&dir_path)?;
+            let mut tf_index = TermFreqIndex::new();
+            tf_index_folder(Path::new(&dir_path), &mut tf_index)?;
             save_tf_index(tf_index, "index.json")?;
         }
         "search" => {
@@ -195,6 +273,21 @@ fn entry() -> Result<(), ()> {
             })?;
 
             check_index(&index_path)?;
+        }
+        "serve" => {
+            let port = args.next().unwrap_or("9090".to_string());
+            let server = Server::http(&format!("0.0.0.0:{}", port)).map_err(|err| {
+                eprintln!("ERROR: could not start HTTP server on port {port}: {err}");
+            })?;
+
+            println!(
+                "{}",
+                format!("INFO: listining at http://localhost:{}", port)
+            );
+
+            for request in server.incoming_requests() {
+                let _ = server_request(request);
+            }
         }
         _ => {
             usage(&program);
