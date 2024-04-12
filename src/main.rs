@@ -230,7 +230,9 @@ fn server_request(tf_index: &TermFreqIndex, mut request: Request) -> Result<(), 
     match (request.method(), request.url()) {
         (Method::Post, "/api/search") => {
             let mut buf = Vec::new();
-            let _ = request.as_reader().read_to_end(&mut buf);
+            let _ = request.as_reader().read_to_end(&mut buf).map_err(|err| {
+                eprintln!("ERROR: could not read the body of the request: {err}");
+            })?;
             let body = str::from_utf8(&buf)
                 .map_err(|err| {
                     eprintln!("ERROR: could not interpret body: {err}");
@@ -248,12 +250,18 @@ fn server_request(tf_index: &TermFreqIndex, mut request: Request) -> Result<(), 
             }
             result.sort_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap());
             result.reverse();
-            for (path, rank) in result.iter().take(10) {
-                println!("{path} => {rank}", path = path.display());
-            }
 
-            request.respond(Response::from_string("ok")).map_err(|err| {
-                eprintln!("ERROR: {err}");
+            let json = serde_json::to_string(&result.iter().take(20).collect::<Vec<_>>()).map_err(
+                |err| {
+                    eprintln!("ERROR: could not convert search results to JSON: {err}");
+                },
+            )?;
+
+            let content_type_header = Header::from_bytes("Content-Type", "application/json")
+                .expect("That we didn't put any garbage in the headers");
+            let response = Response::from_string(&json).with_header(content_type_header);
+            request.respond(response).map_err(|err| {
+                eprintln!("ERROR: could not serve a request {err}");
             })
         }
 
@@ -320,7 +328,7 @@ fn entry() -> Result<(), ()> {
             );
 
             for request in server.incoming_requests() {
-                let _ = server_request(&tf_index, request);
+                server_request(&tf_index, request).ok();
             }
         }
         _ => {
