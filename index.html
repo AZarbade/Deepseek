@@ -1,57 +1,19 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DeepSeek - Local Search Engine</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" integrity="sha512-iBBXm8fW90+nuLcSKlbmrPcLa0OT92xO1BIsZ+ywDWZCvqsWgccV3gFoRBv0z+8dLJgyAHIhR35VZc2oM/gI1w==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+<html>
+  <head>
+    <title>Seroost</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #1e1e2e;
-            color: #cdd6f4;
-        }
-
-        #search-container {
-            background-color: #313244;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-            text-align: center;
-        }
-
-        #search-bar {
-            width: 500px;
-            padding: 10px 10px 10px 35px;
-            font-size: 16px;
-            border: none;
-            border-radius: 3px;
-            background-color: #45475a;
-            color: #cdd6f4;
-        }
-
-        .search-icon {
-            position: absolute;
-            left: 10px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #a6adc8;
-        }
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #333333; /* Dark gray background */
+        color: #ffffff; /* White text color */
+      }
     </style>
-</head>
-<body>
-    <div id="search-container">
-        <h1>DeepSeek</h1>
-        <div style="position: relative;">
-            <i class="fas fa-search search-icon"></i>
-            <input type="text" id="search-bar" placeholder="Search locally...">
-        </div>
-    </div>
-        <script src="index.js"></script>
-</body>
+  </head>
+  <body>
+    <h1>Provide Your Query:</h1>
+    <input id="query" type="text" />
+    <div id="results"></div>
+    <script src="index.js"></script>
+  </body>
 </html>
