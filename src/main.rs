@@ -164,7 +164,6 @@ fn tf_index_folder(dir_path: &Path, tf_index: &mut TermFreqIndex) -> Result<(), 
         };
 
         let mut tf = TermFreq::new();
-
         for term in Lexer::new(&content) {
             if let Some(freq) = tf.get_mut(&term) {
                 *freq += 1;
@@ -215,8 +214,8 @@ fn tf(t: &str, d: &TermFreq) -> f32 {
 }
 
 fn idf(t: &str, d: &TermFreqIndex) -> f32 {
-    let n = 1f32 + d.len() as f32;
-    let m = 1f32 + d.values().filter(|tf| tf.contains_key(t)).count() as f32;
+    let n = d.len() as f32;
+    let m = d.values().filter(|tf| tf.contains_key(t)).count().max(1) as f32;
     return (n / m).log10();
 }
 
