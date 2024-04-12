@@ -219,7 +219,45 @@ fn idf(t: &str, d: &TermFreqIndex) -> f32 {
     return (n / m).log10();
 }
 
-fn server_request(tf_index: &TermFreqIndex, mut request: Request) -> Result<(), ()> {
+fn serve_api_request(tf_index: &TermFreqIndex, mut request: Request) -> Result<(), ()> {
+    let mut buf = Vec::new();
+    let _ = request.as_reader().read_to_end(&mut buf).map_err(|err| {
+        eprintln!("ERROR: could not read the body of the request: {err}");
+    })?;
+    let body = str::from_utf8(&buf)
+        .map_err(|err| {
+            eprintln!("ERROR: could not interpret body: {err}");
+        })?
+        .chars()
+        .collect::<Vec<_>>();
+
+    let mut result = Vec::<(&Path, f32)>::new();
+    for (path, tf_table) in tf_index {
+        let mut rank = 0f32;
+        for token in Lexer::new(&body) {
+            rank += tf(&token, &tf_table) * idf(&token, &tf_index);
+        }
+        result.push((path, rank));
+    }
+    result.sort_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap());
+    result.reverse();
+
+    let json =
+        serde_json::to_string(&result.iter().take(20).collect::<Vec<_>>()).map_err(|err| {
+            eprintln!("ERROR: could not convert search results to JSON: {err}");
+        })?;
+
+    let content_type_header = Header::from_bytes("Content-Type", "application/json")
+        .expect("That we didn't put any garbage in the headers");
+    let response = Response::from_string(&json).with_header(content_type_header);
+    let _ = request.respond(response).map_err(|err| {
+        eprintln!("ERROR: could not serve a request {err}");
+    });
+
+    Ok(())
+}
+
+fn server_request(tf_index: &TermFreqIndex, request: Request) -> Result<(), ()> {
     println!(
         "INFO: received request! method: {:?}, url: {:?}",
         request.method(),
@@ -227,42 +265,7 @@ fn server_request(tf_index: &TermFreqIndex, mut request: Request) -> Result<(), 
     );
 
     match (request.method(), request.url()) {
-        (Method::Post, "/api/search") => {
-            let mut buf = Vec::new();
-            let _ = request.as_reader().read_to_end(&mut buf).map_err(|err| {
-                eprintln!("ERROR: could not read the body of the request: {err}");
-            })?;
-            let body = str::from_utf8(&buf)
-                .map_err(|err| {
-                    eprintln!("ERROR: could not interpret body: {err}");
-                })?
-                .chars()
-                .collect::<Vec<_>>();
-
-            let mut result = Vec::<(&Path, f32)>::new();
-            for (path, tf_table) in tf_index {
-                let mut rank = 0f32;
-                for token in Lexer::new(&body) {
-                    rank += tf(&token, &tf_table) * idf(&token, &tf_index);
-                }
-                result.push((path, rank));
-            }
-            result.sort_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap());
-            result.reverse();
-
-            let json = serde_json::to_string(&result.iter().take(20).collect::<Vec<_>>()).map_err(
-                |err| {
-                    eprintln!("ERROR: could not convert search results to JSON: {err}");
-                },
-            )?;
-
-            let content_type_header = Header::from_bytes("Content-Type", "application/json")
-                .expect("That we didn't put any garbage in the headers");
-            let response = Response::from_string(&json).with_header(content_type_header);
-            request.respond(response).map_err(|err| {
-                eprintln!("ERROR: could not serve a request {err}");
-            })
-        }
+        (Method::Post, "/api/search") => serve_api_request(tf_index, request),
 
         (Method::Get, "/index.js") => {
             serve_static_file(request, "index.js", "text/javascript; charset=utf-8")
