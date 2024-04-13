@@ -4,16 +4,20 @@ use std::path::{Path, PathBuf};
 pub type TermFreq = HashMap<String, usize>;
 pub type TermFreqIndex = HashMap<PathBuf, TermFreq>;
 
+// refer wiki for following calculations reference
+// https://en.wikipedia.org/wiki/Tf%E2%80%93idf
 pub fn tf(t: &str, d: &TermFreq) -> f32 {
-    let a = d.get(t).cloned().unwrap_or(0) as f32;
-    let b = d.iter().map(|(_, f)| *f).sum::<usize>() as f32;
-    a / b
+    let nume = d.get(t).cloned().unwrap_or(0) as f32;
+    let deno = d.iter().map(|(_, f)| f).sum::<usize>().max(0) as f32;
+    // WARN: following value is hardcoded for now.
+    let const_k: f32 = 0.5; // this constant is to remove bias towards longer documents.
+    const_k + (const_k * (nume / deno))
 }
 
 pub fn idf(t: &str, d: &TermFreqIndex) -> f32 {
-    let n = d.len() as f32;
-    let m = d.values().filter(|tf| tf.contains_key(t)).count().max(1) as f32;
-    return (n / m).log10();
+    let nume = d.len() as f32;
+    let deno = (1 + d.values().filter(|tf| tf.contains_key(t)).count()) as f32;
+    return (nume / deno).log10();
 }
 
 pub struct Lexer<'a> {
