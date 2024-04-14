@@ -23,8 +23,12 @@ A localised search engine
       sys time   17.57 secs  438.00 micros   17.57 secs
 
 ### Quering Perf
-Release:
-   830ms
+| Release  | Time  |
+|----------|-------|
+| no cache | 830ms |
+| cache    | 11ms  |
 
-Debug:
-   4.71s
+| Debug    | Time  |
+|----------|-------|
+| no cache | 4.71s |
+| cache    | ---   |

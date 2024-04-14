@@ -7,5 +7,6 @@ edition = "2021"
 
 [dependencies]
 poppler = "0.5.0"
+serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0.115"
 tiny_http = "0.12.0"

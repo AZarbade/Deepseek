@@ -34,7 +34,7 @@ fn serve_static_file(request: Request, file_path: &str, content_type: &str) -> s
     request.respond(Response::from_file(file).with_header(content_type_header))
 }
 
-fn serve_api_search(tf_index: &TermFreqIndex, mut request: Request) -> std::io::Result<()> {
+fn serve_api_search(model: &Model, mut request: Request) -> std::io::Result<()> {
     let mut buf = Vec::new();
     if let Err(err) = request.as_reader().read_to_end(&mut buf) {
         eprintln!("ERROR: could not read the body of the request: {err}");
@@ -49,7 +49,7 @@ fn serve_api_search(tf_index: &TermFreqIndex, mut request: Request) -> std::io::
         }
     };
 
-    let result = search_query(tf_index, &body);
+    let result = search_query(model, &body);
 
     let json = match serde_json::to_string(&result.iter().take(20).collect::<Vec<_>>()) {
         Ok(json) => json,
@@ -64,7 +64,7 @@ fn serve_api_search(tf_index: &TermFreqIndex, mut request: Request) -> std::io::
     request.respond(Response::from_string(&json).with_header(content_type_header))
 }
 
-fn serve_request(tf_index: &TermFreqIndex, request: Request) -> std::io::Result<()> {
+fn serve_request(model: &Model, request: Request) -> std::io::Result<()> {
     println!(
         "INFO: received request! method: {:?}, url: {:?}",
         request.method(),
@@ -72,7 +72,7 @@ fn serve_request(tf_index: &TermFreqIndex, request: Request) -> std::io::Result<
     );
 
     match (request.method(), request.url()) {
-        (Method::Post, "/api/search") => serve_api_search(tf_index, request),
+        (Method::Post, "/api/search") => serve_api_search(model, request),
         (Method::Get, "/index.js") => {
             serve_static_file(request, "index.js", "text/javascript; charset=utf-8")
         }
@@ -83,7 +83,7 @@ fn serve_request(tf_index: &TermFreqIndex, request: Request) -> std::io::Result<
     }
 }
 
-pub fn start(address: &str, tf_index: &TermFreqIndex) -> Result<(), ()> {
+pub fn start(address: &str, model: &Model) -> Result<(), ()> {
     let server = Server::http(&address).map_err(|err| {
         eprintln!("ERROR: could not start HTTP server at {address}: {err}");
     })?;
@@ -91,7 +91,7 @@ pub fn start(address: &str, tf_index: &TermFreqIndex) -> Result<(), ()> {
     println!("INFO: listening at http://{address}/");
 
     for request in server.incoming_requests() {
-        serve_request(&tf_index, request)
+        serve_request(&model, request)
             .map_err(|err| {
                 eprintln!("ERROR: could not serve the response: {err}");
             })
