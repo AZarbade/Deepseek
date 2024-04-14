@@ -97,9 +97,14 @@ pub fn search_query<'a>(model: &'a Model, query: &'a [char]) -> Vec<(&'a Path, f
             rank +=
                 compute_tf(&token, *n, tf_table) * compute_idf(&token, model.tfpd.len(), &model.df);
         }
-        result.push((path, rank));
+        if !rank.is_nan() {
+            result.push((path, rank));
+        }
     }
-    result.sort_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap());
+    result.sort_by(|(_, a), (_, b)| {
+        a.partial_cmp(b)
+            .expect(&format!("{a} and {b} are not comparable"))
+    });
     result.reverse();
     result
 }

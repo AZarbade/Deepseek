@@ -1,4 +1,3 @@
-use poppler::PopplerDocument;
 use std::env;
 use std::fs::{self, File};
 use std::io::BufWriter;
@@ -12,18 +11,31 @@ use model::*;
 mod server;
 
 fn parse_entire_pdf_file(file_path: &Path) -> Result<String, ()> {
-    let pdf = PopplerDocument::new_from_file(&file_path, Some("")).map_err(|err| {
+    use poppler::Document;
+    use std::io::Read;
+
+    let mut content = Vec::new();
+    File::open(file_path)
+        .and_then(|mut file| file.read_to_end(&mut content))
+        .map_err(|err| {
+            eprintln!(
+                "ERROR: could not read file {file_path}: {err}",
+                file_path = file_path.display()
+            );
+        })?;
+
+    let pdf = Document::from_data(&content, None).map_err(|err| {
         eprintln!("ERROR: could not read file {file_path:?}: {err}");
     })?;
 
     let mut buffer = String::new();
-    for i in 0..pdf.get_n_pages() {
+    for i in 0..pdf.n_pages() {
         let page = pdf
-            .get_page(i)
+            .page(i)
             .expect("{i} is within the bounds of the range of the page");
 
-        if let Some(content) = page.get_text() {
-            buffer.push_str(content);
+        if let Some(content) = page.text() {
+            buffer.push_str(content.as_str());
             buffer.push(' ');
         }
     }
