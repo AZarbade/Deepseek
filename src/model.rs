@@ -1,23 +1,31 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 pub type TermFreq = HashMap<String, usize>;
-pub type TermFreqIndex = HashMap<PathBuf, TermFreq>;
+pub type DocFreq = HashMap<String, usize>;
+pub type TermFreqPerDoc = HashMap<PathBuf, (usize, TermFreq)>;
+
+#[derive(Default, Deserialize, Serialize)]
+pub struct Model {
+    pub tfpd: TermFreqPerDoc,
+    pub df: DocFreq,
+}
 
 // refer wiki for following calculations reference
 // https://en.wikipedia.org/wiki/Tf%E2%80%93idf
-pub fn tf(t: &str, d: &TermFreq) -> f32 {
+pub fn compute_tf(t: &str, n: usize, d: &TermFreq) -> f32 {
     let nume = d.get(t).cloned().unwrap_or(0) as f32;
-    let deno = d.iter().map(|(_, f)| f).sum::<usize>().max(0) as f32;
+    let deno = n as f32;
     // WARN: following value is hardcoded for now.
     let const_k: f32 = 0.5; // this constant is to remove bias towards longer documents.
     const_k + (const_k * (nume / deno))
 }
 
-pub fn idf(t: &str, d: &TermFreqIndex) -> f32 {
-    let nume = d.len() as f32;
-    let deno = (1 + d.values().filter(|tf| tf.contains_key(t)).count()) as f32;
-    return (nume / deno).log10();
+pub fn compute_idf(t: &str, n: usize, df: &DocFreq) -> f32 {
+    let nume = n as f32;
+    let deno = df.get(t).cloned().unwrap_or(1) as f32;
+    (nume / deno).log10()
 }
 
 pub struct Lexer<'a> {
@@ -81,12 +89,13 @@ impl<'a> Iterator for Lexer<'a> {
     }
 }
 
-pub fn search_query<'a>(tf_index: &'a TermFreqIndex, query: &'a [char]) -> Vec<(&'a Path, f32)> {
+pub fn search_query<'a>(model: &'a Model, query: &'a [char]) -> Vec<(&'a Path, f32)> {
     let mut result = Vec::<(&Path, f32)>::new();
-    for (path, tf_table) in tf_index {
+    for (path, (n, tf_table)) in &model.tfpd {
         let mut rank = 0f32;
         for token in Lexer::new(&query) {
-            rank += tf(&token, &tf_table) * idf(&token, &tf_index);
+            rank +=
+                compute_tf(&token, *n, tf_table) * compute_idf(&token, model.tfpd.len(), &model.df);
         }
         result.push((path, rank));
     }

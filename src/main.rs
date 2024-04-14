@@ -38,7 +38,7 @@ fn check_index(index_path: &str) -> Result<(), ()> {
         eprintln!("ERROR: could not open index file {index_path}: {err}");
     })?;
 
-    let tf_index: TermFreqIndex = serde_json::from_reader(index_file).map_err(|err| {
+    let tf_index: TermFreqPerDoc = serde_json::from_reader(index_file).map_err(|err| {
         eprintln!("ERROR: could not parse index file {index_path}: {err}");
     })?;
 
@@ -50,21 +50,21 @@ fn check_index(index_path: &str) -> Result<(), ()> {
     Ok(())
 }
 
-fn save_tf_index(tf_index: TermFreqIndex, index_path: &str) -> Result<(), ()> {
+fn save_model_as_json(model: &Model, index_path: &str) -> Result<(), ()> {
     println!("Saving {index_path}...");
 
     let index_file = File::create(index_path).map_err(|err| {
         eprintln!("ERROR: could not create the {index_path}: {err}");
     })?;
 
-    serde_json::to_writer(BufWriter::new(index_file), &tf_index).map_err(|err| {
+    serde_json::to_writer(BufWriter::new(index_file), &model).map_err(|err| {
         eprintln!("ERROR: serde error: could not write to {index_path}: {err}");
     })?;
 
     Ok(())
 }
 
-fn tf_index_folder(dir_path: &Path, tf_index: &mut TermFreqIndex) -> Result<(), ()> {
+fn add_folder_to_model(dir_path: &Path, model: &mut Model) -> Result<(), ()> {
     let dir = fs::read_dir(dir_path).map_err(|err| {
         eprintln!(
             "ERROR: could not open directory {dir_path}: {err}",
@@ -90,7 +90,7 @@ fn tf_index_folder(dir_path: &Path, tf_index: &mut TermFreqIndex) -> Result<(), 
         })?;
 
         if file_type.is_dir() {
-            tf_index_folder(&file_path, tf_index)?;
+            add_folder_to_model(&file_path, model)?;
             continue 'next_file;
         }
 
@@ -102,15 +102,25 @@ fn tf_index_folder(dir_path: &Path, tf_index: &mut TermFreqIndex) -> Result<(), 
         };
 
         let mut tf = TermFreq::new();
+        let mut n = 0;
         for term in Lexer::new(&content) {
             if let Some(freq) = tf.get_mut(&term) {
                 *freq += 1;
             } else {
                 tf.insert(term, 1);
             }
+            n += 1;
         }
 
-        tf_index.insert(file_path, tf);
+        for t in tf.keys() {
+            if let Some(freq) = model.df.get_mut(t) {
+                *freq += 1;
+            } else {
+                model.df.insert(t.to_string(), 1);
+            }
+        }
+
+        model.tfpd.insert(file_path, (n, tf));
     }
 
     Ok(())
@@ -140,9 +150,9 @@ fn entry() -> Result<(), ()> {
                 eprintln!("ERROR: no directory is provided for {subcommand} subcommand");
             })?;
 
-            let mut tf_index = TermFreqIndex::new();
-            tf_index_folder(Path::new(&dir_path), &mut tf_index)?;
-            save_tf_index(tf_index, "index.json")?;
+            let mut model = Default::default();
+            add_folder_to_model(Path::new(&dir_path), &mut model)?;
+            save_model_as_json(&model, "index.json")
         }
         "search" => {
             let index_path = args.next().ok_or_else(|| {
@@ -150,7 +160,7 @@ fn entry() -> Result<(), ()> {
                 eprintln!("ERROR: no path to index is provided for {subcommand} subcommand");
             })?;
 
-            check_index(&index_path)?;
+            check_index(&index_path)
         }
         "serve" => {
             let index_path = args.next().ok_or_else(|| {
@@ -160,22 +170,21 @@ fn entry() -> Result<(), ()> {
             let index_file = File::open(&index_path).map_err(|err| {
                 eprintln!("ERROR: could not open index file {index_path}: {err}");
             })?;
-            let tf_index: TermFreqIndex = serde_json::from_reader(index_file).map_err(|err| {
+
+            let model: Model = serde_json::from_reader(index_file).map_err(|err| {
                 eprintln!("ERROR: could not parse index file {index_path}: {err}");
             })?;
 
             let port = args.next().unwrap_or("9090".to_string());
             let address = format!("0.0.0.0:{}", port);
-            return server::start(&address, &tf_index);
+            server::start(&address, &model)
         }
         _ => {
             usage(&program);
             eprintln!("ERROR: unknown subcommand {subcommand}");
-            return Err(());
+            Err(())
         }
     }
-
-    Ok(())
 }
 
 fn main() -> ExitCode {
