@@ -1,6 +1,7 @@
+use poppler::Document;
 use std::env;
 use std::fs::{self, File};
-use std::io::BufWriter;
+use std::io::{BufWriter, Read};
 use std::path::Path;
 use std::process::ExitCode;
 use std::result::Result;
@@ -22,9 +23,6 @@ fn parse_entire_txt_file(file_path: &Path) -> Result<String, ()> {
 }
 
 fn parse_entire_pdf_file(file_path: &Path) -> Result<String, ()> {
-    use poppler::Document;
-    use std::io::Read;
-
     let mut content = Vec::new();
     File::open(file_path)
         .and_then(|mut file| file.read_to_end(&mut content))
@@ -237,6 +235,13 @@ fn entry() -> Result<(), ()> {
 }
 
 fn main() -> ExitCode {
+    // let input = "linear linearly interpolation".chars().collect::<Vec<_>>();
+    // for term in lexer::Lexer::new(&input) {
+    //     println!("{term:?}");
+    // }
+    //
+    // ExitCode::SUCCESS
+
     match entry() {
         Ok(()) => ExitCode::SUCCESS,
         Err(()) => ExitCode::FAILURE,
