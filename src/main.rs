@@ -8,6 +8,7 @@ use std::str;
 
 mod model;
 use model::*;
+mod lexer;
 mod server;
 
 fn parse_entire_txt_file(file_path: &Path) -> Result<String, ()> {
