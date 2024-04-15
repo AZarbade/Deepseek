@@ -1,6 +1,6 @@
 use std::env;
 use std::fs::{self, File};
-use std::io::BufWriter;
+// use std::io::BufWriter;
 use std::path::Path;
 use std::process::ExitCode;
 use std::result::Result;
@@ -43,40 +43,40 @@ fn parse_entire_pdf_file(file_path: &Path) -> Result<String, ()> {
     Ok(buffer)
 }
 
-fn check_index(index_path: &str) -> Result<(), ()> {
-    println!("Reading {index_path} index file...");
+// fn check_index(index_path: &str) -> Result<(), ()> {
+//     println!("Reading {index_path} index file...");
+//
+//     let index_file = File::open(index_path).map_err(|err| {
+//         eprintln!("ERROR: could not open index file {index_path}: {err}");
+//     })?;
+//
+//     let tf_index: TermFreqPerDoc = serde_json::from_reader(index_file).map_err(|err| {
+//         eprintln!("ERROR: could not parse index file {index_path}: {err}");
+//     })?;
+//
+//     println!(
+//         "{index_path} contains {count} files",
+//         count = tf_index.len()
+//     );
+//
+//     Ok(())
+// }
 
-    let index_file = File::open(index_path).map_err(|err| {
-        eprintln!("ERROR: could not open index file {index_path}: {err}");
-    })?;
+// fn save_model_as_json(model: &InMemoryModel, index_path: &str) -> Result<(), ()> {
+//     println!("Saving {index_path}...");
+//
+//     let index_file = File::create(index_path).map_err(|err| {
+//         eprintln!("ERROR: could not create the {index_path}: {err}");
+//     })?;
+//
+//     serde_json::to_writer(BufWriter::new(index_file), &model).map_err(|err| {
+//         eprintln!("ERROR: serde error: could not write to {index_path}: {err}");
+//     })?;
+//
+//     Ok(())
+// }
 
-    let tf_index: TermFreqPerDoc = serde_json::from_reader(index_file).map_err(|err| {
-        eprintln!("ERROR: could not parse index file {index_path}: {err}");
-    })?;
-
-    println!(
-        "{index_path} contains {count} files",
-        count = tf_index.len()
-    );
-
-    Ok(())
-}
-
-fn save_model_as_json(model: &Model, index_path: &str) -> Result<(), ()> {
-    println!("Saving {index_path}...");
-
-    let index_file = File::create(index_path).map_err(|err| {
-        eprintln!("ERROR: could not create the {index_path}: {err}");
-    })?;
-
-    serde_json::to_writer(BufWriter::new(index_file), &model).map_err(|err| {
-        eprintln!("ERROR: serde error: could not write to {index_path}: {err}");
-    })?;
-
-    Ok(())
-}
-
-fn add_folder_to_model(dir_path: &Path, model: &mut Model) -> Result<(), ()> {
+fn add_folder_to_model(dir_path: &Path, model: &mut dyn Model) -> Result<(), ()> {
     let dir = fs::read_dir(dir_path).map_err(|err| {
         eprintln!(
             "ERROR: could not open directory {dir_path}: {err}",
@@ -113,26 +113,7 @@ fn add_folder_to_model(dir_path: &Path, model: &mut Model) -> Result<(), ()> {
             Err(()) => continue 'next_file,
         };
 
-        let mut tf = TermFreq::new();
-        let mut n = 0;
-        for term in Lexer::new(&content) {
-            if let Some(freq) = tf.get_mut(&term) {
-                *freq += 1;
-            } else {
-                tf.insert(term, 1);
-            }
-            n += 1;
-        }
-
-        for t in tf.keys() {
-            if let Some(freq) = model.df.get_mut(t) {
-                *freq += 1;
-            } else {
-                model.df.insert(t.to_string(), 1);
-            }
-        }
-
-        model.tfpd.insert(file_path, (n, tf));
+        model.add_document(file_path, &content)?;
     }
 
     Ok(())
@@ -162,18 +143,21 @@ fn entry() -> Result<(), ()> {
                 eprintln!("ERROR: no directory is provided for {subcommand} subcommand");
             })?;
 
-            let mut model = Default::default();
+            let index_path = "index.db";
+            let mut model = SqliteModel::open(Path::new(index_path))?;
+            model.begin()?;
             add_folder_to_model(Path::new(&dir_path), &mut model)?;
-            save_model_as_json(&model, "index.json")
+            model.commit()
+            // save_model_as_json(&model, "index.json")
         }
-        "search" => {
-            let index_path = args.next().ok_or_else(|| {
-                usage(&program);
-                eprintln!("ERROR: no path to index is provided for {subcommand} subcommand");
-            })?;
-
-            check_index(&index_path)
-        }
+        // "search" => {
+        //     let index_path = args.next().ok_or_else(|| {
+        //         usage(&program);
+        //         eprintln!("ERROR: no path to index is provided for {subcommand} subcommand");
+        //     })?;
+        //
+        //     check_index(&index_path)
+        // }
         "serve" => {
             let index_path = args.next().ok_or_else(|| {
                 usage(&program);
@@ -183,7 +167,7 @@ fn entry() -> Result<(), ()> {
                 eprintln!("ERROR: could not open index file {index_path}: {err}");
             })?;
 
-            let model: Model = serde_json::from_reader(index_file).map_err(|err| {
+            let model: InMemoryModel = serde_json::from_reader(index_file).map_err(|err| {
                 eprintln!("ERROR: could not parse index file {index_path}: {err}");
             })?;
 
