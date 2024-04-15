@@ -121,6 +121,7 @@ impl Model for SqliteModel {
                 stmt.bind_iter::<_, (_, sqlite::Value)>([
                     (":doc_id", doc_id.into()),
                     (":term", term.as_str().into()),
+                    (":freq", (*freq as i64).into()),
                 ])
                 .map_err(log_err)?;
 
