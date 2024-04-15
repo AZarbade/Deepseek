@@ -44,8 +44,9 @@ impl<'a> Lexer<'a> {
             let term = self
                 .chop_while(|x| x.is_alphanumeric())
                 .iter()
-                .map(|x| x.to_ascii_uppercase())
+                .map(|x| x.to_ascii_lowercase())
                 .collect::<String>();
+            // stemmer implementaion
             let mut env = crate::snowball::SnowballEnv::create(&term);
             crate::snowball::algorithms::english_stemmer::stem(&mut env);
             let stemmed_word = env.get_current().to_string();
