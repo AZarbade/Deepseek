@@ -6,7 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-poppler = "0.5.0"
+poppler-rs = "0.23.0"
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0.115"
+sqlite = "0.34.0"
+sqlite3-sys = "0.16.0"
 tiny_http = "0.12.0"
