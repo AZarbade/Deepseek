@@ -1,6 +1,6 @@
 use std::env;
 use std::fs::{self, File};
-// use std::io::BufWriter;
+use std::io::BufWriter;
 use std::path::Path;
 use std::process::ExitCode;
 use std::result::Result;
@@ -43,38 +43,19 @@ fn parse_entire_pdf_file(file_path: &Path) -> Result<String, ()> {
     Ok(buffer)
 }
 
-// fn check_index(index_path: &str) -> Result<(), ()> {
-//     println!("Reading {index_path} index file...");
-//
-//     let index_file = File::open(index_path).map_err(|err| {
-//         eprintln!("ERROR: could not open index file {index_path}: {err}");
-//     })?;
-//
-//     let tf_index: TermFreqPerDoc = serde_json::from_reader(index_file).map_err(|err| {
-//         eprintln!("ERROR: could not parse index file {index_path}: {err}");
-//     })?;
-//
-//     println!(
-//         "{index_path} contains {count} files",
-//         count = tf_index.len()
-//     );
-//
-//     Ok(())
-// }
+fn save_model_as_json(model: &InMemoryModel, index_path: &str) -> Result<(), ()> {
+    println!("Saving {index_path}...");
 
-// fn save_model_as_json(model: &InMemoryModel, index_path: &str) -> Result<(), ()> {
-//     println!("Saving {index_path}...");
-//
-//     let index_file = File::create(index_path).map_err(|err| {
-//         eprintln!("ERROR: could not create the {index_path}: {err}");
-//     })?;
-//
-//     serde_json::to_writer(BufWriter::new(index_file), &model).map_err(|err| {
-//         eprintln!("ERROR: serde error: could not write to {index_path}: {err}");
-//     })?;
-//
-//     Ok(())
-// }
+    let index_file = File::create(index_path).map_err(|err| {
+        eprintln!("ERROR: could not create {index_path}: {err}");
+    })?;
+
+    serde_json::to_writer(BufWriter::new(index_file), &model).map_err(|err| {
+        eprintln!("ERROR: serde error: could not write to {index_path}: {err}");
+    })?;
+
+    Ok(())
+}
 
 fn add_folder_to_model(dir_path: &Path, model: &mut dyn Model) -> Result<(), ()> {
     let dir = fs::read_dir(dir_path).map_err(|err| {
@@ -123,7 +104,6 @@ fn usage(program: &str) {
     eprintln!("Usage: {program} [SUBCOMMAND] [OPTIONS]");
     eprintln!("Subcommands:");
     eprintln!("- index <folder>: index the <folder> and save the index to index.json file");
-    eprintln!("- search <index-file> [index.json]: check how many documents are indexed in the file (searching is not implemented yet)");
     eprintln!("- serve <index-file> [port]: start local http server with web interface");
 }
 
@@ -131,7 +111,20 @@ fn entry() -> Result<(), ()> {
     let mut args = env::args();
     let program = args.next().expect("path to program is provided");
 
-    let subcommand = args.next().ok_or_else(|| {
+    let mut subcommand = None;
+    let mut use_sqlite_mode = false;
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--sqlite" => use_sqlite_mode = true,
+            _ => {
+                subcommand = Some(arg);
+                break;
+            }
+        }
+    }
+
+    let subcommand = subcommand.ok_or_else(|| {
         usage(&program);
         eprintln!("ERROR: no subcommand is provided");
     })?;
@@ -143,37 +136,49 @@ fn entry() -> Result<(), ()> {
                 eprintln!("ERROR: no directory is provided for {subcommand} subcommand");
             })?;
 
-            let index_path = "index.db";
-            let mut model = SqliteModel::open(Path::new(index_path))?;
-            model.begin()?;
-            add_folder_to_model(Path::new(&dir_path), &mut model)?;
-            model.commit()
-            // save_model_as_json(&model, "index.json")
+            if use_sqlite_mode {
+                let index_path = "index.db";
+
+                if let Err(err) = fs::remove_file(index_path) {
+                    if err.kind() != std::io::ErrorKind::NotFound {
+                        eprintln!("ERROR: could not delete file {index_path}: {err}");
+                        return Err(());
+                    }
+                }
+
+                let mut model = SqliteModel::open(Path::new(index_path))?;
+                model.begin()?;
+                add_folder_to_model(Path::new(&dir_path), &mut model)?;
+                model.commit()
+            } else {
+                let index_path = "index.json";
+                let mut model = Default::default();
+                add_folder_to_model(Path::new(&dir_path), &mut model)?;
+                save_model_as_json(&model, index_path)
+            }
         }
-        // "search" => {
-        //     let index_path = args.next().ok_or_else(|| {
-        //         usage(&program);
-        //         eprintln!("ERROR: no path to index is provided for {subcommand} subcommand");
-        //     })?;
-        //
-        //     check_index(&index_path)
-        // }
         "serve" => {
             let index_path = args.next().ok_or_else(|| {
                 usage(&program);
                 eprintln!("ERROR: no path to index is provided for {subcommand} subcommand");
             })?;
-            let index_file = File::open(&index_path).map_err(|err| {
-                eprintln!("ERROR: could not open index file {index_path}: {err}");
-            })?;
-
-            let model: InMemoryModel = serde_json::from_reader(index_file).map_err(|err| {
-                eprintln!("ERROR: could not parse index file {index_path}: {err}");
-            })?;
 
             let port = args.next().unwrap_or("9090".to_string());
             let address = format!("0.0.0.0:{}", port);
-            server::start(&address, &model)
+
+            if use_sqlite_mode {
+                let model = SqliteModel::open(Path::new(&index_path))?;
+                server::start(&address, &model)
+            } else {
+                let index_file = File::open(&index_path).map_err(|err| {
+                    eprintln!("ERROR: could not open index file {index_path}: {err}");
+                })?;
+
+                let model: InMemoryModel = serde_json::from_reader(index_file).map_err(|err| {
+                    eprintln!("ERROR: could not parse index file {index_path}: {err}");
+                })?;
+                server::start(&address, &model)
+            }
         }
         _ => {
             usage(&program);

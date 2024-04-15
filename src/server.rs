@@ -34,7 +34,7 @@ fn serve_static_file(request: Request, file_path: &str, content_type: &str) -> s
     request.respond(Response::from_file(file).with_header(content_type_header))
 }
 
-fn serve_api_search(model: &InMemoryModel, mut request: Request) -> std::io::Result<()> {
+fn serve_api_search(model: &impl Model, mut request: Request) -> std::io::Result<()> {
     let mut buf = Vec::new();
     if let Err(err) = request.as_reader().read_to_end(&mut buf) {
         eprintln!("ERROR: could not read the body of the request: {err}");
@@ -64,7 +64,7 @@ fn serve_api_search(model: &InMemoryModel, mut request: Request) -> std::io::Res
     request.respond(Response::from_string(&json).with_header(content_type_header))
 }
 
-fn serve_request(model: &InMemoryModel, request: Request) -> std::io::Result<()> {
+fn serve_request(model: &impl Model, request: Request) -> std::io::Result<()> {
     println!(
         "INFO: received request! method: {:?}, url: {:?}",
         request.method(),
@@ -83,7 +83,7 @@ fn serve_request(model: &InMemoryModel, request: Request) -> std::io::Result<()>
     }
 }
 
-pub fn start(address: &str, model: &InMemoryModel) -> Result<(), ()> {
+pub fn start(address: &str, model: &impl Model) -> Result<(), ()> {
     let server = Server::http(&address).map_err(|err| {
         eprintln!("ERROR: could not start HTTP server at {address}: {err}");
     })?;
@@ -91,7 +91,7 @@ pub fn start(address: &str, model: &InMemoryModel) -> Result<(), ()> {
     println!("INFO: listening at http://{address}/");
 
     for request in server.incoming_requests() {
-        serve_request(&model, request)
+        serve_request(model, request)
             .map_err(|err| {
                 eprintln!("ERROR: could not serve the response: {err}");
             })
