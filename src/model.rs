@@ -35,8 +35,14 @@ pub struct InMemoryModel {
 }
 
 impl InMemoryModel {
-    fn remove_document(&mut self, _file_path: &Path) {
-        todo!();
+    fn remove_document(&mut self, file_path: &Path) {
+        if let Some(doc) = self.docs.remove(file_path) {
+            for term in doc.tf.keys() {
+                if let Some(freq) = self.df.get_mut(term) {
+                    *freq -= 1;
+                }
+            }
+        }
     }
 }
 
