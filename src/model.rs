@@ -3,10 +3,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::result::Result;
+use std::time::SystemTime;
 
 pub trait Model {
     fn search_query(&self, query: &[char]) -> Result<Vec<(PathBuf, f32)>, ()>;
-    fn add_document(&mut self, path: PathBuf, content: &[char]) -> Result<(), ()>;
+    fn add_document(
+        &mut self,
+        path: PathBuf,
+        last_modified: SystemTime,
+        content: &[char],
+    ) -> Result<bool, ()>;
 }
 
 pub struct SqliteModel {
@@ -14,73 +20,16 @@ pub struct SqliteModel {
 }
 
 impl SqliteModel {
-    fn execute(&self, statement: &str) -> Result<(), ()> {
-        self.connection.execute(statement).map_err(|err| {
-            eprintln!("ERROR: could not execute query {statement}: {err}");
-        })?;
-        Ok(())
-    }
-
-    pub fn begin(&self) -> Result<(), ()> {
-        self.execute("BEGIN;")
-    }
-
-    pub fn commit(&self) -> Result<(), ()> {
-        self.execute("COMMIT;")
-    }
-
-    pub fn open(path: &Path) -> Result<Self, ()> {
-        let connection = sqlite::open(path).map_err(|err| {
-            eprintln!(
-                "ERROR: could not open sqlite database {path}: {err}",
-                path = path.display()
-            );
-        })?;
-        let this = Self { connection };
-
-        this.execute(
-            "
-                CREATE TABLE IF NOT EXISTS Documents (
-                id INTEGER NOT NULL PRIMARY KEY,
-                path TEXT,
-                term_count INTEGER,
-                UNIQUE(path)
-                );
-        ",
-        )?;
-
-        this.execute(
-            "
-                CREATE TABLE IF NOT EXISTS TermFreq (
-                term TEXT,
-                doc_id INTEGER,
-                freq INTEGER,
-                UNIQUE(term, doc_id),
-                FOREIGN KEY(doc_id) REFERENCES Documents(id)
-                );
-       ",
-        )?;
-
-        this.execute(
-            "
-                CREATE TABLE IF NOT EXISTS DocFreq (
-                term TEXT,
-                freq INTEGER,
-                UNIQUE(term)
-            );
-        ",
-        )?;
-
-        Ok(this)
-    }
-}
-
-impl Model for SqliteModel {
     fn search_query(&self, _query: &[char]) -> Result<Vec<(PathBuf, f32)>, ()> {
         todo!()
     }
 
-    fn add_document(&mut self, path: PathBuf, content: &[char]) -> Result<(), ()> {
+    fn add_document(
+        &mut self,
+        path: PathBuf,
+        _last_modified: SystemTime,
+        content: &[char],
+    ) -> Result<bool, ()> {
         let terms = Lexer::new(content).collect::<Vec<_>>();
 
         let doc_id = {
@@ -159,17 +108,18 @@ impl Model for SqliteModel {
             }
         }
 
-        Ok(())
+        Ok(true)
     }
 }
 
 type TermFreq = HashMap<String, usize>;
 type DocFreq = HashMap<String, usize>;
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct Doc {
     tf: TermFreq,
     count: usize,
+    last_modified: SystemTime,
 }
 
 type Docs = HashMap<PathBuf, Doc>;
@@ -178,6 +128,12 @@ type Docs = HashMap<PathBuf, Doc>;
 pub struct InMemoryModel {
     docs: Docs,
     df: DocFreq,
+}
+
+impl InMemoryModel {
+    fn remove_document(&mut self, _file_path: &Path) {
+        todo!();
+    }
 }
 
 impl Model for InMemoryModel {
@@ -196,7 +152,19 @@ impl Model for InMemoryModel {
         Ok(result)
     }
 
-    fn add_document(&mut self, file_path: PathBuf, content: &[char]) -> Result<(), ()> {
+    fn add_document(
+        &mut self,
+        file_path: PathBuf,
+        last_modified: SystemTime,
+        content: &[char],
+    ) -> Result<bool, ()> {
+        if let Some(doc) = self.docs.get_mut(&file_path) {
+            if doc.last_modified >= last_modified {
+                eprintln!("WARNING: {file_path:?} is already index");
+                return Ok(false);
+            }
+            self.remove_document(&file_path);
+        }
         let mut tf = TermFreq::new();
 
         let mut count = 0;
@@ -217,8 +185,15 @@ impl Model for InMemoryModel {
             }
         }
 
-        self.docs.insert(file_path, Doc { count, tf });
-        Ok(())
+        self.docs.insert(
+            file_path,
+            Doc {
+                count,
+                tf,
+                last_modified,
+            },
+        );
+        Ok(false)
     }
 }
 
