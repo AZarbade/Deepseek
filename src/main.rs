@@ -161,20 +161,7 @@ fn entry() -> Result<(), ()> {
     let mut args = env::args();
     let program = args.next().expect("path to program is provided");
 
-    let mut subcommand = None;
-    let mut use_sqlite_mode = false;
-
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--sqlite" => use_sqlite_mode = true,
-            _ => {
-                subcommand = Some(arg);
-                break;
-            }
-        }
-    }
-
-    let subcommand = subcommand.ok_or_else(|| {
+    let subcommand = args.next().ok_or_else(|| {
         usage(&program);
         eprintln!("ERROR: no subcommand is provided");
     })?;
@@ -189,7 +176,6 @@ fn entry() -> Result<(), ()> {
             let index_file = File::open(&index_path).map_err(|err| {
                 eprintln!("ERROR: could not open index file {index_path}: {err}");
             })?;
-            assert!(!use_sqlite_mode, "nope");
             let mut model: InMemoryModel = serde_json::from_reader(index_file).map_err(|err| {
                 eprintln!("ERROR: could not parse index file {index_path}: {err}");
             })?;
@@ -207,26 +193,10 @@ fn entry() -> Result<(), ()> {
 
             let mut skipped = 0;
 
-            if use_sqlite_mode {
-                let index_path = "index.db";
-
-                if let Err(err) = fs::remove_file(index_path) {
-                    if err.kind() != std::io::ErrorKind::NotFound {
-                        eprintln!("ERROR: could not delete file {index_path}: {err}");
-                        return Err(());
-                    }
-                }
-
-                let mut model = SqliteModel::open(Path::new(index_path))?;
-                model.begin()?;
-                add_folder_to_model(Path::new(&dir_path), &mut model, &mut skipped)?;
-                model.commit()?;
-            } else {
-                let index_path = "index.json";
-                let mut model = Default::default();
-                add_folder_to_model(Path::new(&dir_path), &mut model, &mut skipped)?;
-                save_model_as_json(&model, index_path)?;
-            }
+            let index_path = "index.json";
+            let mut model = Default::default();
+            add_folder_to_model(Path::new(&dir_path), &mut model, &mut skipped)?;
+            save_model_as_json(&model, index_path)?;
 
             println!("Skipped {skipped} files.");
             Ok(())
@@ -240,19 +210,14 @@ fn entry() -> Result<(), ()> {
             let port = args.next().unwrap_or("9090".to_string());
             let address = format!("0.0.0.0:{}", port);
 
-            if use_sqlite_mode {
-                let model = SqliteModel::open(Path::new(&index_path))?;
-                server::start(&address, &model)
-            } else {
-                let index_file = File::open(&index_path).map_err(|err| {
-                    eprintln!("ERROR: could not open index file {index_path}: {err}");
-                })?;
+            let index_file = File::open(&index_path).map_err(|err| {
+                eprintln!("ERROR: could not open index file {index_path}: {err}");
+            })?;
 
-                let model: InMemoryModel = serde_json::from_reader(index_file).map_err(|err| {
-                    eprintln!("ERROR: could not parse index file {index_path}: {err}");
-                })?;
-                server::start(&address, &model)
-            }
+            let model: InMemoryModel = serde_json::from_reader(index_file).map_err(|err| {
+                eprintln!("ERROR: could not parse index file {index_path}: {err}");
+            })?;
+            server::start(&address, &model)
         }
         _ => {
             usage(&program);
@@ -263,13 +228,6 @@ fn entry() -> Result<(), ()> {
 }
 
 fn main() -> ExitCode {
-    // let input = "linear linearly interpolation".chars().collect::<Vec<_>>();
-    // for term in lexer::Lexer::new(&input) {
-    //     println!("{term:?}");
-    // }
-    //
-    // ExitCode::SUCCESS
-
     match entry() {
         Ok(()) => ExitCode::SUCCESS,
         Err(()) => ExitCode::FAILURE,
