@@ -7,12 +7,13 @@ use std::time::SystemTime;
 
 pub trait Model {
     fn search_query(&self, query: &[char]) -> Result<Vec<(PathBuf, f32)>, ()>;
+    fn requires_reindexing(&mut self, path: &Path, last_modified: SystemTime) -> Result<bool, ()>;
     fn add_document(
         &mut self,
         path: PathBuf,
         last_modified: SystemTime,
         content: &[char],
-    ) -> Result<bool, ()>;
+    ) -> Result<(), ()>;
 }
 
 type TermFreq = HashMap<String, usize>;
@@ -40,6 +41,17 @@ impl InMemoryModel {
 }
 
 impl Model for InMemoryModel {
+    fn requires_reindexing(
+        &mut self,
+        file_path: &Path,
+        last_modified: SystemTime,
+    ) -> Result<bool, ()> {
+        if let Some(doc) = self.docs.get(file_path) {
+            return Ok(doc.last_modified < last_modified);
+        }
+        return Ok(true);
+    }
+
     fn search_query(&self, query: &[char]) -> Result<Vec<(PathBuf, f32)>, ()> {
         let mut result = Vec::new();
         let tokens = Lexer::new(&query).collect::<Vec<_>>();
@@ -60,14 +72,9 @@ impl Model for InMemoryModel {
         file_path: PathBuf,
         last_modified: SystemTime,
         content: &[char],
-    ) -> Result<bool, ()> {
-        if let Some(doc) = self.docs.get_mut(&file_path) {
-            if doc.last_modified >= last_modified {
-                eprintln!("WARNING: {file_path:?} is already index");
-                return Ok(false);
-            }
-            self.remove_document(&file_path);
-        }
+    ) -> Result<(), ()> {
+        self.remove_document(&file_path);
+
         let mut tf = TermFreq::new();
 
         let mut count = 0;
@@ -96,7 +103,7 @@ impl Model for InMemoryModel {
                 last_modified,
             },
         );
-        Ok(false)
+        Ok(())
     }
 }
 

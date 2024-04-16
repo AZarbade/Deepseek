@@ -134,17 +134,21 @@ fn add_folder_to_model(
             continue 'next_file;
         }
 
-        println!("Indexing {:?}...", &file_path);
+        if model.requires_reindexing(&file_path, last_modified)? {
+            println!("Indexing {:?}...", &file_path);
 
-        let content = match parse_entire_file_by_extension(&file_path) {
-            Ok(content) => content.chars().collect::<Vec<_>>(),
-            Err(()) => {
-                *skipped += 1;
-                continue 'next_file;
-            }
-        };
-
-        model.add_document(file_path, last_modified, &content)?;
+            let content = match parse_entire_file_by_extension(&file_path) {
+                Ok(content) => content.chars().collect::<Vec<_>>(),
+                Err(()) => {
+                    *skipped += 1;
+                    continue 'next_file;
+                }
+            };
+            model.add_document(file_path, last_modified, &content)?;
+        } else {
+            println!("IGNORED: {file_path:?} is already indexed");
+            *skipped += 1;
+        }
     }
 
     Ok(())
