@@ -6,6 +6,8 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::result::Result;
 use std::str;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 mod model;
 use model::*;
@@ -77,7 +79,7 @@ fn parse_entire_file_by_extension(file_path: &Path) -> Result<String, ()> {
     }
 }
 
-fn save_model_as_json(model: &InMemoryModel, index_path: &str) -> Result<(), ()> {
+fn save_model_as_json(model: &Model, index_path: &str) -> Result<(), ()> {
     println!("Saving {index_path}...");
 
     let index_file = File::create(index_path).map_err(|err| {
@@ -93,8 +95,8 @@ fn save_model_as_json(model: &InMemoryModel, index_path: &str) -> Result<(), ()>
 
 fn add_folder_to_model(
     dir_path: &Path,
-    model: &mut dyn Model,
-    skipped: &mut usize,
+    model: Arc<Mutex<Model>>,
+    processed: &mut usize,
 ) -> Result<(), ()> {
     let dir = fs::read_dir(dir_path).map_err(|err| {
         eprintln!(
@@ -112,6 +114,13 @@ fn add_folder_to_model(
         })?;
 
         let file_path = file.path();
+        let file_type = file.file_type().map_err(|err| {
+            eprintln!(
+                "ERROR: could not determine type of file {file_path}: {err}",
+                file_path = file_path.display()
+            );
+        })?;
+
         let last_modified = file
             .metadata()
             .map_err(|err| {
@@ -122,32 +131,24 @@ fn add_folder_to_model(
                 eprintln!("ERROR: could not get last modified data for {file_path:?}: {err}");
             })?;
 
-        let file_type = file.file_type().map_err(|err| {
-            eprintln!(
-                "ERROR: could not determine type of file {file_path}: {err}",
-                file_path = file_path.display()
-            );
-        })?;
-
         if file_type.is_dir() {
-            add_folder_to_model(&file_path, model, skipped)?;
+            add_folder_to_model(&file_path, Arc::clone(&model), processed)?;
             continue 'next_file;
         }
 
-        if model.requires_reindexing(&file_path, last_modified)? {
+        let mut model = model.lock().unwrap();
+        if model.requires_reindexing(&file_path, last_modified) {
             println!("Indexing {:?}...", &file_path);
 
             let content = match parse_entire_file_by_extension(&file_path) {
                 Ok(content) => content.chars().collect::<Vec<_>>(),
-                Err(()) => {
-                    *skipped += 1;
-                    continue 'next_file;
-                }
+                Err(()) => continue 'next_file,
             };
-            model.add_document(file_path, last_modified, &content)?;
+            model.add_document(file_path, last_modified, &content);
+            *processed += 1;
         } else {
             println!("IGNORED: {file_path:?} is already indexed");
-            *skipped += 1;
+            *processed += 1;
         }
     }
 
@@ -157,8 +158,7 @@ fn add_folder_to_model(
 fn usage(program: &str) {
     eprintln!("Usage: {program} [SUBCOMMAND] [OPTIONS]");
     eprintln!("Subcommands:");
-    eprintln!("- index <folder>: index the <folder> and save the index to index.json file");
-    eprintln!("- serve <index-file> [port]: start local http server with web interface");
+    eprintln!("- serve <folder> [port]: start a local http server with web interface");
 }
 
 fn entry() -> Result<(), ()> {
@@ -171,57 +171,50 @@ fn entry() -> Result<(), ()> {
     })?;
 
     match subcommand.as_str() {
-        "reindex" => {
-            let dir_path = args.next().ok_or_else(|| {
-                usage(&program);
-                eprintln!("ERROR: no directory is provided for {subcommand} subcommand");
-            })?;
-            let index_path = "index.json";
-            let index_file = File::open(&index_path).map_err(|err| {
-                eprintln!("ERROR: could not open index file {index_path}: {err}");
-            })?;
-            let mut model: InMemoryModel = serde_json::from_reader(index_file).map_err(|err| {
-                eprintln!("ERROR: could not parse index file {index_path}: {err}");
-            })?;
-            let mut skipped = 0;
-            add_folder_to_model(Path::new(&dir_path), &mut model, &mut skipped)?;
-            save_model_as_json(&model, index_path)?;
-            println!("Skipped {skipped} files.");
-            Ok(())
-        }
-        "index" => {
-            let dir_path = args.next().ok_or_else(|| {
-                usage(&program);
-                eprintln!("ERROR: no directory is provided for {subcommand} subcommand");
-            })?;
-
-            let mut skipped = 0;
-
-            let index_path = "index.json";
-            let mut model = Default::default();
-            add_folder_to_model(Path::new(&dir_path), &mut model, &mut skipped)?;
-            save_model_as_json(&model, index_path)?;
-
-            println!("Skipped {skipped} files.");
-            Ok(())
-        }
         "serve" => {
-            let index_path = args.next().ok_or_else(|| {
+            let dir_path = args.next().ok_or_else(|| {
                 usage(&program);
-                eprintln!("ERROR: no path to index is provided for {subcommand} subcommand");
+                eprintln!("ERROR: no directory is provided for {subcommand} subcommand");
             })?;
 
+            let index_path = "index.json";
             let port = args.next().unwrap_or("9090".to_string());
             let address = format!("0.0.0.0:{}", port);
 
-            let index_file = File::open(&index_path).map_err(|err| {
-                eprintln!("ERROR: could not open index file {index_path}: {err}");
+            let exists = Path::new(index_path).try_exists().map_err(|err| {
+                eprintln!("ERROR: could not check existance of file {index_path}: {err}");
             })?;
 
-            let model: InMemoryModel = serde_json::from_reader(index_file).map_err(|err| {
-                eprintln!("ERROR: could not parse index file {index_path}: {err}");
-            })?;
-            server::start(&address, &model)
+            let model: Arc<Mutex<Model>>;
+            if exists {
+                let index_file = File::open(&index_path).map_err(|err| {
+                    eprintln!("ERROR: could not open index file {index_path}: {err}");
+                })?;
+
+                model = Arc::new(Mutex::new(serde_json::from_reader(index_file).map_err(
+                    |err| {
+                        eprintln!("ERROR: could not parse index file {index_path}: {err}");
+                    },
+                )?));
+            } else {
+                model = Arc::new(Mutex::new(Default::default()))
+            }
+
+            {
+                let model = Arc::clone(&model);
+                thread::spawn(move || {
+                    let mut processed = 0;
+                    add_folder_to_model(Path::new(&dir_path), Arc::clone(&model), &mut processed)
+                        .unwrap();
+                    if processed > 0 {
+                        let model = model.lock().unwrap();
+                        save_model_as_json(&model, index_path).unwrap();
+                    }
+                    println!("Finished indexing");
+                });
+            }
+
+            server::start(&address, Arc::clone(&model))
         }
         _ => {
             usage(&program);

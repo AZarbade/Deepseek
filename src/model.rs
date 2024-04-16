@@ -2,19 +2,7 @@ use super::lexer::Lexer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::result::Result;
 use std::time::SystemTime;
-
-pub trait Model {
-    fn search_query(&self, query: &[char]) -> Result<Vec<(PathBuf, f32)>, ()>;
-    fn requires_reindexing(&mut self, path: &Path, last_modified: SystemTime) -> Result<bool, ()>;
-    fn add_document(
-        &mut self,
-        path: PathBuf,
-        last_modified: SystemTime,
-        content: &[char],
-    ) -> Result<(), ()>;
-}
 
 type TermFreq = HashMap<String, usize>;
 type DocFreq = HashMap<String, usize>;
@@ -29,12 +17,12 @@ pub struct Doc {
 type Docs = HashMap<PathBuf, Doc>;
 
 #[derive(Default, Deserialize, Serialize)]
-pub struct InMemoryModel {
-    docs: Docs,
+pub struct Model {
+    pub docs: Docs,
     df: DocFreq,
 }
 
-impl InMemoryModel {
+impl Model {
     fn remove_document(&mut self, file_path: &Path) {
         if let Some(doc) = self.docs.remove(file_path) {
             for term in doc.tf.keys() {
@@ -44,21 +32,15 @@ impl InMemoryModel {
             }
         }
     }
-}
 
-impl Model for InMemoryModel {
-    fn requires_reindexing(
-        &mut self,
-        file_path: &Path,
-        last_modified: SystemTime,
-    ) -> Result<bool, ()> {
+    pub fn requires_reindexing(&mut self, file_path: &Path, last_modified: SystemTime) -> bool {
         if let Some(doc) = self.docs.get(file_path) {
-            return Ok(doc.last_modified < last_modified);
+            return doc.last_modified < last_modified;
         }
-        return Ok(true);
+        true
     }
 
-    fn search_query(&self, query: &[char]) -> Result<Vec<(PathBuf, f32)>, ()> {
+    pub fn search_query(&self, query: &[char]) -> Vec<(PathBuf, f32)> {
         let mut result = Vec::new();
         let tokens = Lexer::new(&query).collect::<Vec<_>>();
         for (path, doc) in &self.docs {
@@ -70,15 +52,15 @@ impl Model for InMemoryModel {
         }
         result.sort_by(|(_, rank1), (_, rank2)| rank1.partial_cmp(rank2).unwrap());
         result.reverse();
-        Ok(result)
+        result
     }
 
-    fn add_document(
+    pub fn add_document(
         &mut self,
         file_path: PathBuf,
         last_modified: SystemTime,
         content: &[char],
-    ) -> Result<(), ()> {
+    ) {
         self.remove_document(&file_path);
 
         let mut tf = TermFreq::new();
@@ -109,7 +91,6 @@ impl Model for InMemoryModel {
                 last_modified,
             },
         );
-        Ok(())
     }
 }
 
