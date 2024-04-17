@@ -16,7 +16,7 @@ A localised search engine
 |----------|---------|-------|
 | no cache |  830ms  | 4.71s |
 | df cache |  11ms   |  -ms  |
-| tfn cache|  03ms   |  5ms  |
+| tfn cache|  3ms   |  5ms  |
 
 
 P.S. Don't look at the commit history; was experimentating.
