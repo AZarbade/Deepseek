@@ -48,13 +48,17 @@ impl Model {
             for token in &tokens {
                 rank += compute_tf(token, doc) * compute_idf(&token, self.docs.len(), &self.df);
             }
+            // TODO: where is this NaN coming from???? wtf
             if !rank.is_nan() {
                 result.push((path.clone(), rank));
             }
-            result.push((path.clone(), rank));
         }
 
-        result.sort_by(|(_, rank1), (_, rank2)| rank1.partial_cmp(rank2).unwrap());
+        result.sort_by(|(_, rank1), (_, rank2)| {
+            rank1
+                .partial_cmp(rank2)
+                .expect(&format!("{rank1} and {rank2} are not comparable"))
+        });
         result.reverse();
         result
     }
