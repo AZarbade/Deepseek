@@ -1,70 +1,60 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <title>Seroost</title>
+<head>
+    <title>Search Engine</title>
     <style>
-      body {
-        padding-top: 75px;
-      }
+        body {
+            background-color: #04151F;
+            font-family: sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
 
-      .search-container {
-        width: 490px;
-        display: block;
-        margin: 0 auto;
-      }
+        * {
+            box-sizing: border-box;
+        }
 
-      input#search-bar {
-        margin: 0 auto;
-        width: 100%;
-        height: 45px;
-        padding: 0 20px;
-        font-size: 1rem;
-        border: 1px solid #D0CFCE;
-        outline: none;
-      }
+        .search-btn {
+            width: 40px;
+            height: 40px;
+            font-size: 24px;
+            color: white;
+            background-color: #04151F;
+            border: none;
+            cursor: pointer;
+        }
 
-      input#search-bar:focus {
-        border: 1px solid #008ABF;
-        transition: 0.35s ease;
-        color: #008ABF;
-      }
+        .search-bar {
+            width: 250px;
+            height: 40px;
+            padding: 15px;
+            border-radius: 25px;
+            background-color: #EFD6AC;
+            color: #C44900;
+            outline: none;
+            border: none;
+        }
 
-      input#search-bar:focus::-webkit-input-placeholder {
-        transition: opacity 0.45s ease;
-        opacity: 0;
-      }
+        .search-container {
+            display: flex;
+            align-items: center;
+        }
 
-      input#search-bar:focus::-moz-placeholder {
-        transition: opacity 0.45s ease;
-        opacity: 0;
-      }
-
-      input#search-bar:focus:-ms-placeholder {
-        transition: opacity 0.45s ease;
-        opacity: 0;
-      }
-
-      .search-icon {
-        position: relative;
-        float: right;
-        width: 75px;
-        height: 75px;
-        top: -62px;
-        right: -45px;
-      }
-
-      #search-results {
-        margin-top: 20px;
-      }
+        #search-results div {
+          color: white;
+        }
     </style>
-  </head>
-  <body>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+</head>
+<body>
     <div class="search-container">
-      <input type="text" id="search-bar" placeholder="What can I help you with today?">
-      <a href="#"><img class="search-icon" src="http://www.endlessicons.com/wp-content/uploads/2012/12/search-icon.png"></a>
+        <input type="text" id="search-bar" class="search-bar" placeholder="Search...">
+        <button class="search-btn"><i class="ph-bold ph-magnifying-glass"></i></button>
     </div>
     <div id="search-results"></div>
-
     <script src="index.js"></script>
-  </body>
+</body>
 </html>
