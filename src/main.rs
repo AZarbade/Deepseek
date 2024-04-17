@@ -79,15 +79,15 @@ fn parse_entire_file_by_extension(file_path: &Path) -> Result<String, ()> {
     }
 }
 
-fn save_model_as_json(model: &Model, index_path: &str) -> Result<(), ()> {
-    println!("Saving {index_path}...");
+fn save_model_as_json(model: &Model, index_path: &Path) -> Result<(), ()> {
+    println!("Saving {index_path:?}...");
 
     let index_file = File::create(index_path).map_err(|err| {
-        eprintln!("ERROR: could not create {index_path}: {err}");
+        eprintln!("ERROR: could not create {index_path:?}: {err}");
     })?;
 
     serde_json::to_writer(BufWriter::new(index_file), &model).map_err(|err| {
-        eprintln!("ERROR: serde error: could not write to {index_path}: {err}");
+        eprintln!("ERROR: serde error: could not write to {index_path:?}: {err}");
     })?;
 
     Ok(())
@@ -114,6 +114,16 @@ fn add_folder_to_model(
         })?;
 
         let file_path = file.path();
+
+        let dot_file = file_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| s.starts_with("."))
+            .unwrap_or(false);
+        if dot_file {
+            continue 'next_file;
+        }
+
         let file_type = file.file_type().map_err(|err| {
             eprintln!(
                 "ERROR: could not determine type of file {file_path}: {err}",
@@ -177,23 +187,25 @@ fn entry() -> Result<(), ()> {
                 eprintln!("ERROR: no directory is provided for {subcommand} subcommand");
             })?;
 
-            let index_path = "index.json";
+            let mut index_path = Path::new(&dir_path).to_path_buf();
+            index_path.push(".index.json");
+
             let port = args.next().unwrap_or("9090".to_string());
             let address = format!("0.0.0.0:{}", port);
 
-            let exists = Path::new(index_path).try_exists().map_err(|err| {
-                eprintln!("ERROR: could not check existance of file {index_path}: {err}");
+            let exists = index_path.try_exists().map_err(|err| {
+                eprintln!("ERROR: could not check existance of file {index_path:?}: {err}");
             })?;
 
             let model: Arc<Mutex<Model>>;
             if exists {
                 let index_file = File::open(&index_path).map_err(|err| {
-                    eprintln!("ERROR: could not open index file {index_path}: {err}");
+                    eprintln!("ERROR: could not open index file {index_path:?}: {err}");
                 })?;
 
                 model = Arc::new(Mutex::new(serde_json::from_reader(index_file).map_err(
                     |err| {
-                        eprintln!("ERROR: could not parse index file {index_path}: {err}");
+                        eprintln!("ERROR: could not parse index file {index_path:?}: {err}");
                     },
                 )?));
             } else {
@@ -208,7 +220,7 @@ fn entry() -> Result<(), ()> {
                         .expect(&format!("ERROR: could not load directory into the model"));
                     if processed > 0 {
                         let model = model.lock().unwrap();
-                        save_model_as_json(&model, index_path).unwrap();
+                        save_model_as_json(&model, &index_path).unwrap();
                     }
                     println!("Finished indexing");
                 });
