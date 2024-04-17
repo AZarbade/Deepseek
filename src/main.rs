@@ -205,7 +205,7 @@ fn entry() -> Result<(), ()> {
                 thread::spawn(move || {
                     let mut processed = 0;
                     add_folder_to_model(Path::new(&dir_path), Arc::clone(&model), &mut processed)
-                        .unwrap();
+                        .expect(&format!("ERROR: could not load directory into the model"));
                     if processed > 0 {
                         let model = model.lock().unwrap();
                         save_model_as_json(&model, index_path).unwrap();

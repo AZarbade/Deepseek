@@ -19,7 +19,7 @@ type Docs = HashMap<PathBuf, Doc>;
 #[derive(Default, Deserialize, Serialize)]
 pub struct Model {
     pub docs: Docs,
-    df: DocFreq,
+    pub df: DocFreq,
 }
 
 impl Model {
