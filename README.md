@@ -4,9 +4,12 @@ A localised search engine
 
 
 ## References
-1. [TF-IDF](https://en.wikipedia.org/wiki/Tf–idf)
-2. [pdfgrep](https://pdfgrep.org/)
-3. [poppler]()
+1. Concept: [TF-IDF](https://en.wikipedia.org/wiki/Tf–idf)
+2. Inspiration: [pdfgrep](https://pdfgrep.org/)
+3. Primary library used: [poppler-rs](https://crates.io/crates/poppler-rs)
+
+## Special thanks to,
+[TSODING](https://www.youtube.com/tsoding) for being a chad dev.
 
 ## Stats
 
